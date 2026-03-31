@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePipeline } from '../context/PipelineContext';
 import StepIndicator from '../components/StepIndicator';
+import { apiFetch } from '../utils/apiFetch';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -22,14 +23,14 @@ export default function SourceValidator() {
   // Route Guard
   useEffect(() => {
     if (pipelineStep === 'idle') {
-      navigate('/upload');
+      navigate('/app/upload');
     }
   }, []);
 
   const runValidation = async () => {
     setValidating(true);
     try {
-      const res = await fetch(`${API}/api/pipeline/validate-source`, {
+      const res = await apiFetch(`${API}/api/pipeline/validate-source`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ segments })
       });
@@ -46,7 +47,7 @@ export default function SourceValidator() {
   const handleRunRAG = async () => {
     setRunning(true);
     try {
-      const res = await fetch(`${API}/api/pipeline/run-rag`, {
+      const res = await apiFetch(`${API}/api/pipeline/run-rag`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blocks: segments, target_language: targetLang || '' })
       });
@@ -59,11 +60,9 @@ export default function SourceValidator() {
     setRunning(false);
   };
 
-  const handleProceed = async () => {
-    if (ragResults.length === 0) {
-      await handleRunRAG();
-    }
-    navigate('/editor');
+  const handleProceed = () => {
+    setPipelineStep('validated');
+    navigate('/app/editor');
   };
 
   // Count only unresolved issues
@@ -478,7 +477,7 @@ export default function SourceValidator() {
 
         {/* Bottom CTA */}
         <div className="max-w-5xl mx-auto mt-8 flex justify-end gap-4">
-          <button onClick={() => navigate('/upload')} className="px-6 py-3 border border-outline-variant text-on-surface-variant font-bold text-sm rounded-full hover:bg-surface-container transition-all cursor-pointer">
+          <button onClick={() => navigate('/app/upload')} className="px-6 py-3 border border-outline-variant text-on-surface-variant font-bold text-sm rounded-full hover:bg-surface-container transition-all cursor-pointer">
             ← Back to Upload
           </button>
           <button onClick={handleProceed} disabled={running} className="px-10 py-3.5 bg-gradient-to-r from-tertiary to-tertiary-container text-white font-bold text-sm rounded-full shadow-lg shadow-tertiary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer">

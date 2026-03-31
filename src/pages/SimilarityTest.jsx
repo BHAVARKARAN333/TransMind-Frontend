@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/apiFetch';
 
 export default function SimilarityTest() {
   const [sourceData, setSourceData] = useState('');
@@ -20,7 +21,7 @@ export default function SimilarityTest() {
 
   const fetchMemory = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/similarity/memory');
+      const res = await apiFetch('http://localhost:8000/api/similarity/memory');
       if (res.ok) {
         const data = await res.json();
         setMemoryStore(data.pairs || []);
@@ -54,7 +55,7 @@ export default function SimilarityTest() {
       const newPair = { source: s.trim(), translation: t.trim() };
       const pairs = [newPair];
         
-      const res = await fetch('http://localhost:8000/api/similarity/add', {
+      const res = await apiFetch('http://localhost:8000/api/similarity/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pairs }),
@@ -89,7 +90,7 @@ export default function SimilarityTest() {
     setLoading(true);
     try {
       // Requirement 6: Reset memoryStore = [], update UI count
-      await fetch('http://localhost:8000/api/similarity/clear', { method: 'DELETE' });
+      await apiFetch('http://localhost:8000/api/similarity/clear', { method: 'DELETE' });
       setMemoryStore([]);
       setResult(null);
       setFeedbackMsg('✔ Database cleared.');
@@ -108,7 +109,7 @@ export default function SimilarityTest() {
       // Requirement 5: Debug Logging
       console.log("Current memory:", memoryStore);
       
-      const res = await fetch('http://localhost:8000/api/similarity/match', {
+      const res = await apiFetch('http://localhost:8000/api/similarity/match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sentence: inputSentence }),
@@ -363,7 +364,7 @@ function TranslationMemoryViewer() {
   const fetchTM = async () => {
     setTmLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/translation-memory');
+      const res = await apiFetch('http://localhost:8000/api/translation-memory');
       if (res.ok) {
         const data = await res.json();
         setTmItems(data.items || []);

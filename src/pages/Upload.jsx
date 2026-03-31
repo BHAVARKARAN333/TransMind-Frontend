@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePipeline } from '../context/PipelineContext';
 import StepIndicator from '../components/StepIndicator';
+import { apiFetch } from '../utils/apiFetch';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -24,11 +25,12 @@ export default function Upload() {
     setOriginalFormat
   } = usePipeline();
 
-  const [selectedFile, setSelectedFile] = useState(null);   // file object
-  const [phase, setPhase] = useState('idle');                // idle | uploading | extracting | segmenting | done | error
-  const [liveBlocks, setLiveBlocks] = useState([]);          // blocks appearing one-by-one
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [phase, setPhase] = useState('idle'); // idle | uploading | extracting | segmenting | detecting_language | done | error
+  const [liveBlocks, setLiveBlocks] = useState([]);
   const [segmentCount, setSegmentCount] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleFileDrop = (e) => {
@@ -41,7 +43,6 @@ export default function Upload() {
       setErrorMsg('Only .docx and .pdf files are supported.');
       return;
     }
-    // Show file info immediately
     setSelectedFile(file);
     setPhase('idle');
     setLiveBlocks([]);
@@ -63,9 +64,9 @@ export default function Upload() {
       formData.append('file', selectedFile);
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      const timeout = setTimeout(() => controller.abort(), 30000);
 
-      const res = await fetch(`${API}/api/pipeline/extract`, {
+      const res = await apiFetch(`${API}/api/pipeline/extract`, {
         method: 'POST', body: formData, signal: controller.signal
       });
       clearTimeout(timeout);
@@ -90,7 +91,7 @@ export default function Upload() {
 
       // 2) Segment
       setPhase('segmenting');
-      const segRes = await fetch(`${API}/api/pipeline/segment`, {
+      const segRes = await apiFetch(`${API}/api/pipeline/segment`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blocks: allBlocks })
       });
@@ -102,7 +103,7 @@ export default function Upload() {
       // 3) Detect Language using LLM
       setPhase('detecting_language');
       const sampleText = allBlocks.slice(0, 10).map(b => b.text).join(' ');
-      const langRes = await fetch(`${API}/api/pipeline/detect-language`, {
+      const langRes = await apiFetch(`${API}/api/pipeline/detect-language`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: sampleText })
       });
@@ -137,7 +138,7 @@ export default function Upload() {
 
   const handleStart = () => {
     setTargetLangName(LANGUAGES.find(l => l.code === targetLang)?.name || targetLang);
-    navigate('/source-validator');
+    navigate('/app/source-validator');
   };
 
   const isProcessing = phase === 'uploading' || phase === 'extracting' || phase === 'segmenting' || phase === 'detecting_language';
@@ -145,204 +146,332 @@ export default function Upload() {
   const tables = liveBlocks.filter(b => b.type === 'table_cell').length;
 
   return (
-    <>
-      <header className="fixed top-0 right-0 w-[calc(100%-240px)] z-40 bg-white/80 backdrop-blur-md border-b border-slate-100 shadow-sm flex justify-between items-center h-16 px-8 ml-[240px]">
-        <h2 className="font-['Inter'] font-bold text-slate-900 text-xl">Upload</h2>
+    <div className="bg-slate-50 min-h-screen font-['Inter'] selection:bg-blue-200 selection:text-blue-900">
+      
+      {/* Sleek Enterprise Top Navbar */}
+      <header className="fixed top-0 right-0 w-[calc(100%-240px)] z-40 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 flex justify-between items-center h-20 px-10 ml-[240px] shadow-sm">
+        <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center border border-blue-100">
+             <span className="material-symbols-outlined text-blue-600 text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>cloud_upload</span>
+           </div>
+           <h2 className="font-black text-slate-900 text-2xl tracking-tight">Upload Center</h2>
+        </div>
         <StepIndicator />
       </header>
 
-      <main className="ml-[240px] pt-24 pb-12 px-12 max-w-6xl mx-auto min-h-screen">
-        <div className="mb-10">
-          <h3 className="text-4xl font-extrabold tracking-tight text-on-surface mb-2">Upload Document</h3>
-          <p className="text-on-surface-variant max-w-xl">Upload a DOCX file to start the AI translation pipeline.</p>
+      {/* Main Content Area */}
+      <main className="ml-[240px] pt-32 pb-16 px-10 max-w-[1400px] mx-auto min-h-screen animate-fade-in-up">
+        
+        <div className="mb-12">
+          <h3 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-900 mb-3 leading-tight">
+            Secure AI Translation Hub
+          </h3>
+          <p className="text-lg text-slate-500 max-w-2xl font-medium">
+            Upload your DOCX or PDF files. Our military-grade engine extracts content, parses XML structure, and prepares it for intelligent LLM processing.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            {/* === NO FILE SELECTED === */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+          
+          {/* Left Column (Dropzone & Processing) */}
+          <div className="xl:col-span-2 space-y-8">
+            
+            {/* === NO FILE SELECTED: Massive Premium Dropzone === */}
             {!selectedFile && (
-              <div className="bg-surface-container-low p-8 rounded-xl">
+              <div className="bg-white rounded-[2rem] p-4 shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-slate-200/60">
                 <div
-                  className="border-2 border-dashed border-outline-variant rounded-lg bg-surface-container-highest/30 h-56 flex flex-col items-center justify-center transition-all hover:border-primary/50 hover:bg-surface-container-highest/50 cursor-pointer group"
-                  onDrop={handleFileDrop}
-                  onDragOver={e => e.preventDefault()}
+                  className={`relative rounded-3xl min-h-[400px] flex flex-col items-center justify-center p-12 transition-all duration-300 cursor-pointer overflow-hidden ${
+                    isDragging 
+                      ? 'bg-blue-50 border-2 border-blue-500 shadow-inner' 
+                      : 'bg-slate-50 border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-slate-100/50'
+                  }`}
+                  onDrop={(e) => { setIsDragging(false); handleFileDrop(e); }}
+                  onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
                   onClick={() => fileInputRef.current.click()}
                 >
                   <input ref={fileInputRef} type="file" accept=".docx,.pdf" className="hidden" onChange={handleFileDrop} />
-                  <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined text-primary text-3xl">cloud_upload</span>
+                  
+                  {/* Glowing background blob */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-blue-400/20 rounded-full blur-[80px] pointer-events-none" />
+
+                  <div className={`w-24 h-24 mb-8 rounded-[2rem] flex items-center justify-center transition-all duration-500 shadow-xl relative z-10 ${
+                    isDragging 
+                      ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/40 scale-110' 
+                      : 'bg-white shadow-slate-200 border border-slate-100'
+                  }`}>
+                    <span className={`material-symbols-outlined text-5xl transition-colors ${
+                      isDragging ? 'text-white' : 'text-blue-600'
+                    }`} style={{ fontVariationSettings: "'FILL' 1" }}>backup</span>
                   </div>
-                  <p className="text-lg font-semibold text-on-surface">Drop DOCX or PDF here</p>
-                  <p className="text-on-surface-variant text-sm mt-1">or click to browse</p>
+                  
+                  <h3 className="text-3xl font-black text-slate-900 mb-3 relative z-10">Drag & drop your files here</h3>
+                  <p className="text-lg text-slate-500 font-medium relative z-10 mb-8">Supported formats: <strong className="text-slate-700">DOCX, PDF</strong>. Maximum size: <strong className="text-slate-700">25MB</strong>.</p>
+                  
+                  <button className="px-8 py-4 bg-white text-slate-800 font-bold border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:border-slate-300 transition-all relative z-10 flex items-center gap-2">
+                     <span className="material-symbols-outlined text-[20px]">folder_open</span>
+                     Browse Files
+                  </button>
                 </div>
-                {errorMsg && <p className="mt-3 text-sm text-error font-medium flex items-center gap-1"><span className="material-symbols-outlined text-sm">error</span>{errorMsg}</p>}
+
+                {/* Trust Badges under Dropzone */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 mt-4 opacity-70">
+                   <div className="flex items-center gap-3 justify-center text-slate-600">
+                     <span className="material-symbols-outlined text-blue-500">lock</span>
+                     <span className="text-sm font-bold tracking-tight">Enterprise Encryption</span>
+                   </div>
+                   <div className="flex items-center gap-3 justify-center text-slate-600 border-x border-slate-200">
+                     <span className="material-symbols-outlined text-indigo-500">memory</span>
+                     <span className="text-sm font-bold tracking-tight">GPT-4o Powered AI</span>
+                   </div>
+                   <div className="flex items-center gap-3 justify-center text-slate-600">
+                     <span className="material-symbols-outlined text-emerald-500">format_align_left</span>
+                     <span className="text-sm font-bold tracking-tight">Preserves XML Layout</span>
+                   </div>
+                </div>
+
+                {errorMsg && <p className="mt-4 text-center text-sm text-red-600 font-bold p-3 bg-red-50 rounded-xl mx-4 shadow-sm">{errorMsg}</p>}
               </div>
             )}
-            {/* === FILE SELECTED (show info + extract button) === */}
+
+            {/* === FILE SELECTED (Extraction & Progress) === */}
             {selectedFile && (
-              <div className="space-y-4">
-                {/* File Card */}
-                <div className={`bg-surface-container-lowest rounded-xl p-5 shadow-sm border-l-4 flex items-center gap-4 ${
-                  phase === 'done' ? 'border-green-400' : phase === 'error' ? 'border-error' : 'border-primary'
-                }`}>
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                    phase === 'done' ? 'bg-green-50' : phase === 'error' ? 'bg-error/10' : 'bg-primary/10'
+              <div className="space-y-6">
+                
+                {/* Premium File ID Card */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 relative overflow-hidden flex items-center gap-6">
+                  {/* Status glow behind card */}
+                  {phase === 'done' && <div className="absolute left-0 top-0 bottom-0 w-2 bg-emerald-500"></div>}
+                  {phase === 'error' && <div className="absolute left-0 top-0 bottom-0 w-2 bg-red-500"></div>}
+                  {isProcessing && <div className="absolute left-0 top-0 bottom-0 w-2 bg-blue-500 animate-pulse"></div>}
+
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm shrink-0 z-10 ${
+                    phase === 'done' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
+                    phase === 'error' ? 'bg-red-50 text-red-600 border border-red-100' : 
+                    'bg-slate-50 text-blue-600 border border-slate-200'
                   }`}>
-                    <span className="material-symbols-outlined text-2xl"
-                      style={phase === 'done' ? { color: '#16a34a', fontVariationSettings: "'FILL' 1" } : phase === 'error' ? { color: '#dc2626' } : { color: '#1a56db' }}>
-                      {phase === 'done' ? 'check_circle' : phase === 'error' ? 'error' : 'description'}
+                    <span className="material-symbols-outlined text-3xl" style={{fontVariationSettings: "'FILL' 1"}}>
+                      {phase === 'done' ? 'check_circle' : phase === 'error' ? 'cancel' : 'description'}
                     </span>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-bold text-on-surface text-base">{selectedFile.name}</h4>
-                    <p className="text-sm text-on-surface-variant">{(selectedFile.size / 1024).toFixed(1)} KB · DOCX</p>
+                  
+                  <div className="flex-1 z-10">
+                    <h4 className="text-xl font-black text-slate-900 truncate">{selectedFile.name}</h4>
+                    <p className="text-sm font-medium text-slate-500 mt-1">{(selectedFile.size / 1024).toFixed(1)} KB • Document Container</p>
                   </div>
 
-                  {/* Status badge */}
-                  {phase === 'idle' && (
-                    <span className="bg-surface-container-high text-on-surface-variant text-[10px] font-bold px-3 py-1.5 rounded-full uppercase">Ready</span>
-                  )}
-                  {isProcessing && (
-                    <span className="bg-primary/10 text-primary text-[10px] font-bold px-3 py-1.5 rounded-full uppercase animate-pulse flex items-center gap-1.5">
-                      <span className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin inline-block" />
-                      {phase === 'extracting' ? 'Extracting...' : phase === 'segmenting' ? 'Segmenting...' : 'Uploading...'}
-                    </span>
-                  )}
-                  {phase === 'done' && (
-                    <span className="bg-green-100 text-green-800 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase">✔ Parsed</span>
-                  )}
-                  {phase === 'error' && (
-                    <span className="bg-error/10 text-error text-[10px] font-bold px-3 py-1.5 rounded-full uppercase">Failed</span>
-                  )}
+                  <div className="flex items-center gap-4 z-10 shrink-0">
+                    {/* Status badge */}
+                    {phase === 'idle' && <span className="px-4 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-full border border-slate-200">Waiting to Extract</span>}
+                    {phase === 'done' && <span className="px-4 py-2 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200">Extraction Complete</span>}
+                    {phase === 'error' && <span className="px-4 py-2 bg-red-100 text-red-700 text-xs font-bold rounded-full border border-red-200">Failed</span>}
+                    {isProcessing && <span className="px-4 py-2 bg-blue-100 text-blue-700 text-xs font-bold rounded-full border border-blue-200 animate-pulse">Processing...</span>}
 
-                  <button onClick={handleRemove} className="text-outline hover:text-error transition-colors p-1" title="Remove">
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
+                    <button onClick={handleRemove} className="w-10 h-10 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors border border-slate-200">
+                      <span className="material-symbols-outlined text-[20px]">close</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Extract Button (only shown before extraction starts) */}
+                {/* Extract Call to Action (Big Bold Button) */}
                 {phase === 'idle' && (
-                  <button onClick={handleExtract} className="w-full py-3.5 bg-gradient-to-r from-primary to-tertiary text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 cursor-pointer">
-                    <span className="material-symbols-outlined">bolt</span>
-                    Extract & Process Document
+                  <button onClick={handleExtract} className="w-full py-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xl rounded-2xl flex items-center justify-center gap-3 hover:shadow-[0_20px_40px_rgba(37,99,235,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all cursor-pointer relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-white/20 w-0 group-hover:w-full transition-all duration-700 ease-in-out z-0 skew-x-12 opacity-0 group-hover:opacity-100"></div>
+                    <span className="material-symbols-outlined text-3xl font-normal relative z-10">bolt</span>
+                    <span className="relative z-10 tracking-tight">Extract & Process Document</span>
                   </button>
                 )}
 
-                {/* Error display */}
-                {phase === 'error' && (
-                  <div className="flex items-center gap-2 text-sm text-error bg-error/10 border border-error/20 px-4 py-3 rounded-lg">
-                    <span className="material-symbols-outlined text-base">error</span>
-                    <span className="flex-1">{errorMsg}</span>
-                    <button onClick={handleExtract} className="underline font-bold text-xs">Retry</button>
-                  </div>
-                )}
-
-                {/* Live Status Line */}
+                {/* Loading / Processing Cinematic State */}
                 {isProcessing && (
-                  <div className="bg-surface-container-low rounded-lg px-4 py-3 flex items-center gap-3">
-                    <span className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                    <span className="text-sm font-medium text-on-surface">
-                      {phase === 'extracting' && `Extracting content... ${liveBlocks.length} blocks found`}
-                      {phase === 'segmenting' && `Segmenting ${liveBlocks.length} blocks into sentences...`}
-                      {phase === 'detecting_language' && `Detecting document language via AI...`}
-                    </span>
+                  <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-slate-100">
+                       <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 w-1/2 animate-[progress_2s_infinite]"></div>
+                    </div>
+                    
+                    <div className="flex items-center gap-6 mb-8">
+                       <div className="w-16 h-16 rounded-full border-4 border-slate-100 border-t-blue-600 animate-spin flex-shrink-0"></div>
+                       <div>
+                          <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                            {phase === 'extracting' && "Extracting Structural XML..."}
+                            {phase === 'segmenting' && "Segmenting Text Blocks..."}
+                            {phase === 'detecting_language' && "Detecting Source Language via AI..."}
+                          </h3>
+                          <p className="text-slate-500 font-medium mt-1">
+                            {liveBlocks.length} content blocks successfully extracted so far...
+                          </p>
+                       </div>
+                    </div>
+
+                    {/* Hacker-terminal style block feed */}
+                    <div className="bg-slate-950 rounded-2xl p-6 h-64 overflow-y-auto font-mono text-sm border border-slate-800 shadow-inner custom-scrollbar relative">
+                      <div className="absolute top-0 right-0 p-3 flex gap-2">
+                         <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                         <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                         <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {liveBlocks.length === 0 ? (
+                           <p className="text-slate-500 italic animate-pulse">Initializing document parse routine...</p>
+                        ) : (
+                          liveBlocks.map((b, i) => (
+                            <div key={i} className="flex gap-4 animate-fade-in-up">
+                              <span className="text-slate-600 select-none">[{i.toString().padStart(4, '0')}]</span>
+                              <span className={`${
+                                b.type === 'heading' ? 'text-amber-400 font-bold' : 
+                                b.type === 'table_cell' ? 'text-emerald-400' : 'text-blue-300'
+                              } w-24 flex-shrink-0 uppercase text-xs tracking-widest`}>{b.type}</span>
+                              <span className={`text-slate-300 ${b.type === 'heading' ? 'font-bold text-white' : ''} truncate flex-1`}>
+                                {b.text}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                        {/* Fake cursor */}
+                        <div className="w-2 h-4 bg-white animate-pulse mt-2"></div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                {/* Done Stats */}
+                {/* Premium Bento Grid Stats (Extraction Finished) */}
                 {phase === 'done' && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-3 flex items-center gap-6">
-                    <span className="material-symbols-outlined text-green-600 text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>task_alt</span>
-                    <div className="flex items-center gap-6 text-sm font-bold">
-                      <span className="text-green-800">{liveBlocks.length} blocks</span>
-                      <span className="text-green-800">{segmentCount} sentences</span>
-                      <span className="text-green-700">{headings} headings</span>
-                      <span className="text-green-700">{tables} table cells</span>
+                  <div className="space-y-6 animate-fade-in-up">
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Extraction Insights</h3>
+                    
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Stat 1 */}
+                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 border border-blue-100">
+                          <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1"}}>dataset</span>
+                        </div>
+                        <p className="text-[13px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Blocks</p>
+                        <h4 className="text-3xl font-black text-slate-900">{liveBlocks.length}</h4>
+                      </div>
+
+                      {/* Stat 2 */}
+                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 border border-indigo-100">
+                          <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1"}}>short_text</span>
+                        </div>
+                        <p className="text-[13px] font-bold text-slate-500 uppercase tracking-widest mb-1">Sentences</p>
+                        <h4 className="text-3xl font-black text-slate-900">{segmentCount}</h4>
+                      </div>
+
+                      {/* Stat 3 */}
+                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 border border-emerald-100">
+                          <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1"}}>title</span>
+                        </div>
+                        <p className="text-[13px] font-bold text-slate-500 uppercase tracking-widest mb-1">Headings</p>
+                        <h4 className="text-3xl font-black text-slate-900">{headings}</h4>
+                      </div>
+
+                      {/* Stat 4 */}
+                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 border border-amber-100">
+                          <span className="material-symbols-outlined" style={{fontVariationSettings: "'FILL' 1"}}>backup_table</span>
+                        </div>
+                        <p className="text-[13px] font-bold text-slate-500 uppercase tracking-widest mb-1">Table Cells</p>
+                        <h4 className="text-3xl font-black text-slate-900">{tables}</h4>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* === LIVE BLOCKS LIST (streaming in) === */}
-                {liveBlocks.length > 0 && (
-                  <div className="bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-outline-variant/10 max-h-72 overflow-y-auto custom-scrollbar">
-                    <h4 className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-sm text-primary">view_list</span>
-                      Extracted Content ({liveBlocks.length} blocks)
-                    </h4>
-                    <div className="space-y-1">
-                      {liveBlocks.map((b, i) => (
-                        <div key={i} className="flex items-start gap-2 text-xs py-1.5 border-b border-outline-variant/10 animate-fade-in">
-                          <span className="text-on-surface-variant font-mono w-5 text-right flex-shrink-0">{i + 1}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ${
-                            b.type === 'heading' ? 'bg-primary/10 text-primary' :
-                            b.type === 'table_cell' ? 'bg-tertiary/10 text-tertiary' :
-                            'bg-surface-container text-on-surface-variant'
-                          }`}>{b.type}</span>
-                          <span className={`text-on-surface ${b.type === 'heading' ? 'font-bold' : ''}`}>{b.text}</span>
-                        </div>
-                      ))}
-                    </div>
+                {/* Error Box */}
+                {phase === 'error' && (
+                  <div className="bg-red-50 border border-red-200 rounded-3xl p-6 flex items-start gap-4">
+                     <span className="material-symbols-outlined text-red-500 text-3xl">error</span>
+                     <div>
+                       <h4 className="text-lg font-bold text-red-800 tracking-tight mb-1">Extraction Process Failed</h4>
+                       <p className="text-red-600 font-medium">{errorMsg}</p>
+                       <button onClick={handleExtract} className="mt-4 px-6 py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm">
+                         Retry Extraction
+                       </button>
+                     </div>
                   </div>
                 )}
+
               </div>
             )}
           </div>
 
-          {/* === SETTINGS SIDEBAR === */}
-          <div className="lg:col-span-1">
-            <div className="bg-surface-container-lowest rounded-xl p-6 shadow-[0_10px_40px_rgba(30,58,95,0.06)] space-y-6 sticky top-24">
-              <h4 className="text-sm font-bold uppercase tracking-widest text-on-surface-variant/70 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">tune</span> Translation Settings
-              </h4>
-              <div className="space-y-4">
-                {/* Detected Language (Read-only) */}
+          {/* Right Column (Settings Sidebar) */}
+          <div className="xl:col-span-1">
+            <div className="bg-white rounded-[2rem] p-8 shadow-[0_20px_40px_rgba(0,0,0,0.06)] border border-slate-200 sticky top-[100px]">
+              
+              <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100">
+                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-slate-600 text-[20px]">tune</span>
+                 </div>
+                 <h4 className="text-xl font-black text-slate-900 tracking-tight">Translation Params</h4>
+              </div>
+
+              <div className="space-y-6">
+                
+                {/* Detected Language (Disabled Look) */}
                 <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-2">Detected Language</label>
-                  <div className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg py-3 px-4 text-on-surface font-medium flex items-center justify-between opacity-80 cursor-not-allowed">
-                    <span>{sourceLangName}</span>
-                    {phase === 'done' && <span className="material-symbols-outlined text-green-600 text-[18px]">verified</span>}
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2">Detected Source Language</label>
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-5 text-slate-500 font-bold flex items-center justify-between pointer-events-none opacity-80">
+                    <span className="flex items-center gap-2">
+                       {phase === 'done' ? sourceLangName : 'Waiting...'}
+                    </span>
+                    {phase === 'done' && <span className="material-symbols-outlined text-emerald-500 text-[18px]" style={{fontVariationSettings: "'FILL' 1"}}>verified</span>}
                   </div>
                 </div>
 
-                {/* Target Language (Dropdown) */}
+                {/* Target Language */}
                 <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-2">Target Language</label>
-                  <select className="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-on-surface focus:ring-2 focus:ring-primary/20 font-medium"
-                    value={targetLang} onChange={e => setTargetLang(e.target.value)}>
-                    {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
-                  </select>
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2 text-blue-600">Translate To</label>
+                  <div className="relative">
+                    <select className="w-full bg-white border-2 border-slate-200 rounded-xl py-3.5 px-5 text-slate-900 font-bold appearance-none cursor-pointer hover:border-blue-400 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all duration-300"
+                      value={targetLang} onChange={e => setTargetLang(e.target.value)}>
+                      {LANGUAGES.map(l => <option key={l.code} value={l.code} className="font-bold">{l.name}</option>)}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                  </div>
                   {phase === 'done' && sourceLang === targetLang && (
-                    <p className="text-xs text-error mt-1 font-medium">Target language cannot be the same as source.</p>
+                    <p className="text-[11px] font-bold text-red-500 mt-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">error</span> Target cannot match source.</p>
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-2">Tone Profile</label>
-                  <select className="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-on-surface focus:ring-2 focus:ring-primary/20 font-medium"
-                    value={tone} onChange={e => setTone(e.target.value)}>
-                    {TONES.map(t => <option key={t} value={t.toLowerCase()}>{t}</option>)}
-                  </select>
+                {/* Tone Profile */}
+                <div className="pb-4">
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-2">Tone Profile</label>
+                  <div className="relative">
+                    <select className="w-full bg-white border-2 border-slate-200 rounded-xl py-3.5 px-5 text-slate-900 font-bold appearance-none cursor-pointer hover:border-indigo-400 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300"
+                      value={tone} onChange={e => setTone(e.target.value)}>
+                      {TONES.map(t => <option key={t} value={t.toLowerCase()} className="font-bold">{t}</option>)}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                  </div>
                 </div>
-              </div>
 
-              <button
-                onClick={handleStart}
-                disabled={phase !== 'done' || sourceLang === targetLang}
-                className={`w-full py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-3 transition-all cursor-pointer ${
-                  phase === 'done' && sourceLang !== targetLang
-                    ? 'bg-gradient-to-b from-primary to-primary-container text-white hover:scale-[1.02] active:scale-[0.98] shadow-blue-900/20'
-                    : 'bg-surface-container-highest text-on-surface-variant/50 cursor-not-allowed shadow-none'
-                }`}
-              >
-                Start Validation
-                <span className="material-symbols-outlined text-lg">arrow_forward</span>
-              </button>
-              {phase !== 'done' && <p className="text-xs text-on-surface-variant text-center">Extract a DOCX file first.</p>}
+                {/* Submit Action */}
+                <button
+                  onClick={handleStart}
+                  disabled={phase !== 'done' || sourceLang === targetLang}
+                  className={`w-full py-5 rounded-2xl font-black text-lg transition-all duration-300 flex items-center justify-center gap-2 group ${
+                    phase === 'done' && sourceLang !== targetLang
+                      ? 'bg-slate-900 text-white hover:bg-black hover:shadow-xl hover:shadow-slate-900/20 active:scale-[0.98]'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  }`}
+                >
+                  Initiate Validation
+                  <span className={`material-symbols-outlined transition-transform ${phase === 'done' && sourceLang !== targetLang ? 'group-hover:translate-x-1' : ''}`}>arrow_forward</span>
+                </button>
+                
+                {phase !== 'done' && (
+                  <p className="text-xs font-bold text-slate-400 text-center mt-4">Extract document to enable validation.</p>
+                )}
+
+              </div>
             </div>
           </div>
+
         </div>
       </main>
-      <div className="fixed top-0 right-0 -z-10 w-1/2 h-full bg-gradient-to-l from-primary/5 to-transparent pointer-events-none" />
-    </>
+    </div>
   );
 }

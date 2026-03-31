@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { apiFetch } from '../utils/apiFetch';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -89,7 +90,7 @@ export default function Pipeline() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch(`${API}/api/pipeline/extract`, { method: 'POST', body: formData });
+      const res = await apiFetch(`${API}/api/pipeline/extract`, { method: 'POST', body: formData });
       const data = await res.json();
       setBlocks(data.blocks || []);
     } catch (err) { console.error(err); }
@@ -98,7 +99,7 @@ export default function Pipeline() {
 
   // ── Phase 2: Segment ───────────────────────────────────
   const handleSegment = async () => {
-    const res = await fetch(`${API}/api/pipeline/segment`, {
+    const res = await apiFetch(`${API}/api/pipeline/segment`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ blocks })
     });
@@ -110,7 +111,7 @@ export default function Pipeline() {
   // ── Phase 3: Detect Language ────────────────────────────
   const handleDetectLanguage = async () => {
     const sampleText = segments.slice(0, 5).map(s => s.sentence).join(' ');
-    const res = await fetch(`${API}/api/pipeline/detect-language`, {
+    const res = await apiFetch(`${API}/api/pipeline/detect-language`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: sampleText })
     });
@@ -123,7 +124,7 @@ export default function Pipeline() {
 
   // ── Phase 4+5: RAG + Decision ───────────────────────────
   const handleRunRag = async () => {
-    const res = await fetch(`${API}/api/pipeline/run-rag`, {
+    const res = await apiFetch(`${API}/api/pipeline/run-rag`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ blocks: segments })
     });
@@ -140,7 +141,7 @@ export default function Pipeline() {
       .filter(r => r.match_type !== 'Exact Match')
       .map(r => r.sentence);
 
-    const res = await fetch(`${API}/api/pipeline/translate`, {
+    const res = await apiFetch(`${API}/api/pipeline/translate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sentences: toTranslate, source_language: sourceLang, target_language: targetLang, tone })
     });
@@ -177,7 +178,7 @@ export default function Pipeline() {
       .map((t, i) => ({ source: t.sentence, translation: editedTranslations[i] }));
     
     if (pairs.length === 0) return;
-    await fetch(`${API}/api/similarity/add`, {
+    await apiFetch(`${API}/api/similarity/add`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pairs })
     });
@@ -193,7 +194,7 @@ export default function Pipeline() {
       text: t.sentence,
       translated_text: editedTranslations[i]
     }));
-    const res = await fetch(`${API}/api/pipeline/export`, {
+    const res = await apiFetch(`${API}/api/pipeline/export`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ blocks: exportBlocks })
     });

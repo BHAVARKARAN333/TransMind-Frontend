@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/apiFetch';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -14,7 +15,7 @@ export default function Glossary() {
 
   const fetchTerms = async () => {
     try {
-      const res = await fetch(`${API}/api/glossary/get`);
+      const res = await apiFetch(`${API}/api/glossary/get`);
       const data = await res.json();
       setTerms(data.terms || []);
     } catch (err) {
@@ -31,7 +32,7 @@ export default function Glossary() {
     setAdding(true);
 
     try {
-      const res = await fetch(`${API}/api/glossary/add`, {
+      const res = await apiFetch(`${API}/api/glossary/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
@@ -49,7 +50,7 @@ export default function Glossary() {
   const handleDeleteTerm = async (source) => {
     if (!window.confirm(`Delete '${source}' from glossary?`)) return;
     try {
-      const res = await fetch(`${API}/api/glossary/delete/${encodeURIComponent(source)}`, {
+      const res = await apiFetch(`${API}/api/glossary/delete/${encodeURIComponent(source)}`, {
         method: 'DELETE'
       });
       if (res.ok) {

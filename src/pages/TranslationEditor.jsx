@@ -2,12 +2,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePipeline } from '../context/PipelineContext';
 import StepIndicator from '../components/StepIndicator';
+import { apiFetch } from '../utils/apiFetch';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export default function TranslationEditor() {
   const navigate = useNavigate();
-  const { segments, ragResults, targetLang, targetLangName, tone, sourceLang, fileName, originalFileBase64, originalFormat, pipelineStep } = usePipeline();
+  const { segments, ragResults, setRagResults, targetLang, targetLangName, tone, sourceLang, fileName, originalFileBase64, originalFormat, pipelineStep, setPipelineStep } = usePipeline();
 
   const [editorData, setEditorData] = useState([]); // [{sentence, translated, match_type, score, status}]
   const [loading, setLoading] = useState(true);
@@ -17,105 +18,165 @@ export default function TranslationEditor() {
   // Route Guard: must have validated content
   useEffect(() => {
     if (pipelineStep === 'idle') {
-      navigate('/upload');
+      navigate('/app/upload');
     } else if (pipelineStep === 'extracted') {
-      navigate('/source-validator');
+      navigate('/app/source-validator');
     }
   }, []);
 
-  // Load and translate all segments on mount
+  // Run once on mount
   useEffect(() => {
-    if (ragResults.length > 0) {
-      initTranslations();
-    }
-  }, [ragResults]);
+    if (editorData.length > 0) return; // Prevent double init
+    if (!segments || segments.length === 0) return; // Prevent init without data
 
-  const initTranslations = async () => {
+    // 1. Instantly render the UI with placeholders so the user sees progress immediately
+    const initialData = segments.map(seg => ({
+      sentence: seg.sentence,
+      translated: '[ ⏳ Translating... ]',
+      match_type: 'Translating...',
+      score: 0.0,
+      block_type: seg.block_type || 'text',
+      element_type: seg.element_type,
+      element_index: seg.element_index,
+      table_idx: seg.table_idx,
+      row_idx: seg.row_idx,
+      col_idx: seg.col_idx,
+      status: 'pending',
+      needs_translation: true
+    }));
+    setEditorData(initialData);
+
+    // 2. Decide next steps based on whether RAG was pre-computed
+    if (ragResults && ragResults.length > 0) {
+      // Setup using existing RAG data
+      applyRagAndTranslate(initialData, ragResults);
+    } else {
+      // Run RAG in the background quietly
+      fetchRagResultsInBackground(initialData);
+    }
+  }, [ragResults, segments]);
+
+  const fetchRagResultsInBackground = async (currentData) => {
+    try {
+      const res = await apiFetch(`${API}/api/pipeline/run-rag`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocks: segments, target_language: targetLang || '' })
+      });
+      const data = await res.json();
+      setPipelineStep('validated');
+      setRagResults(data.results || []);
+      applyRagAndTranslate(currentData, data.results || []);
+    } catch (err) {
+      console.error('Background RAG failed:', err);
+      // If RAG completely fails, just translate everything from scratch
+      runTranslationChunks(currentData);
+    }
+  };
+
+  const applyRagAndTranslate = (currentData, ragData) => {
+    // 1. Update UI with Memory matches
+    const updatedData = currentData.map(item => {
+      const r = ragData.find(rag => rag.sentence === item.sentence);
+      const isExactMatch = r && r.match_type === 'Exact Match';
+      
+      return {
+        ...item,
+        translated: isExactMatch ? r.best_match_translation : '[ ⏳ Translating... ]',
+        match_type: isExactMatch ? 'Exact Match' : (r ? 'Translating...' : item.match_type),
+        score: r ? r.similarity_score : 0.0,
+        needs_translation: !isExactMatch
+      };
+    });
+    setEditorData(updatedData);
+
+    // 2. Run chunks for the sentences that STILL need translation
+    runTranslationChunks(updatedData);
+  };
+
+  const runTranslationChunks = async (dataToProcess) => {
     setLoading(true);
 
-    // 1. Initial setup: Show TM translation if available, else show Translating placeholder
-    const initialData = ragResults.map(r => ({
-      sentence: r.sentence,
-      translated: r.match_type === 'Exact Match' ? r.best_match_translation : '[ ⏳ Translating... ]',
-      match_type: r.match_type === 'Exact Match' ? 'Exact Match' : 'Translating...',
-      score: r.similarity_score,
-      block_type: r.block_type,
-      element_type: r.element_type,
-      element_index: r.element_index,
-      table_idx: r.table_idx,
-      row_idx: r.row_idx,
-      col_idx: r.col_idx,
-      status: 'pending',
-      needs_translation: r.match_type !== 'Exact Match'
-    }));
-    
-    setEditorData(initialData);
-    setLoading(false); // Enable UI immediately
+    const newSentences = Array.from(new Set(dataToProcess.filter(d => d.needs_translation).map(d => d.sentence)));
+    if (newSentences.length === 0) {
+      setLoading(false);
+      return;
+    }
 
-    // 2. Extract uniquely needed sentences
-    const newSentences = Array.from(new Set(initialData.filter(d => d.needs_translation).map(d => d.sentence)));
-    if (newSentences.length === 0) return;
-
-    // 2.5 Fetch active glossary to enforce terminology
+    // Fetch Glossary
     let activeGlossary = {};
     try {
-      const gRes = await fetch(`${API}/api/glossary/get`);
+      const gRes = await apiFetch(`${API}/api/glossary/get`);
       const gData = await gRes.json();
       if (gData.terms) {
         gData.terms.filter(t => t.status === 'Active').forEach(t => {
           activeGlossary[t.source] = t.target;
         });
       }
-    } catch (err) {
-      console.warn("Failed to fetch glossary", err);
+    } catch (err) { console.warn("Failed to fetch glossary", err); }
+
+    // ⚡ PARALLEL PROCESSING: Fire ALL chunks simultaneously!
+    const chunkSize = 20;
+    const chunks = [];
+    for (let i = 0; i < newSentences.length; i += chunkSize) {
+      chunks.push(newSentences.slice(i, i + chunkSize));
     }
 
-    // 3. Process in chunks to avoid timeouts & show live progress
-    // Gemini Free Tier: 15 Requests Per Minute (RPM) -> 1 req every 4 seconds
-    const chunkSize = 20; // Increased chunk size to reduce total requests
-    for (let i = 0; i < newSentences.length; i += chunkSize) {
-      if (i > 0) {
-        // 'Jugaad': Sleep for 4.5 seconds between chunks to bypass 429 Rate Limits
-        await new Promise(resolve => setTimeout(resolve, 4500));
-      }
-      
-      const chunk = newSentences.slice(i, i + chunkSize);
-      try {
-        const res = await fetch(`${API}/api/pipeline/translate`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sentences: chunk, source_language: sourceLang, target_language: targetLang, tone, glossary: activeGlossary })
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          const chunkMap = {};
-          (data.translations || []).forEach(t => { chunkMap[t.source] = { translated: t.translated, mode: t.mode }; });
+    console.log(`⚡ Firing ${chunks.length} translation chunks in PARALLEL (${newSentences.length} sentences)`);
+
+    // Helper: translate a single chunk with auto-retry on failure
+    const translateChunkWithRetry = async (chunk, idx, maxRetries = 2) => {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await apiFetch(`${API}/api/pipeline/translate`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sentences: chunk, source_language: sourceLang, target_language: targetLang, tone, glossary: activeGlossary })
+          });
           
-          setEditorData(prev => prev.map(item => {
-            if (item.needs_translation && chunkMap[item.sentence]) {
-              const resObj = chunkMap[item.sentence];
-              let mt = 'LLM New';
-              let sc = 0.0;
-              // If backend served it from persistent memory
-              if (resObj.mode === 'memory') {
-                mt = 'Exact Match';
-                sc = 1.0;
+          if (res.ok) {
+            const data = await res.json();
+            const chunkMap = {};
+            (data.translations || []).forEach(t => { chunkMap[t.source] = { translated: t.translated, mode: t.mode }; });
+            
+            // Progressively update UI as each chunk completes
+            setEditorData(prev => prev.map(item => {
+              if (item.needs_translation && chunkMap[item.sentence]) {
+                const resObj = chunkMap[item.sentence];
+                let mt = 'LLM New';
+                let sc = 0.0;
+                if (resObj.mode === 'memory') {
+                  mt = 'Exact Match';
+                  sc = 1.0;
+                }
+                return { 
+                  ...item, 
+                  translated: resObj.translated, 
+                  match_type: mt, 
+                  score: sc, 
+                  needs_translation: false 
+                };
               }
-              return { 
-                ...item, 
-                translated: resObj.translated, 
-                match_type: mt, 
-                score: sc, 
-                needs_translation: false 
-              };
-            }
-            return item;
-          }));
+              return item;
+            }));
+            console.log(`✅ Chunk ${idx + 1}/${chunks.length} done (${chunk.length} sentences)`);
+            return; // Success!
+          } else {
+            throw new Error(`HTTP ${res.status}`);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Chunk ${idx + 1} attempt ${attempt + 1} failed:`, err.message);
+          if (attempt < maxRetries) {
+            console.log(`🔄 Retrying chunk ${idx + 1} with different API key...`);
+            await new Promise(r => setTimeout(r, 1000)); // Brief pause before retry
+          } else {
+            console.error(`❌ Chunk ${idx + 1} failed after ${maxRetries + 1} attempts`);
+          }
         }
-      } catch (err) {
-        console.error('Translation chunk failed:', err);
       }
-    }
+    };
+
+    // Fire ALL chunks in parallel with retry support
+    await Promise.allSettled(chunks.map((chunk, idx) => translateChunkWithRetry(chunk, idx)));
+    setLoading(false);
   };
 
   const handleEdit = (i, val) => {
@@ -127,7 +188,7 @@ export default function TranslationEditor() {
     // Learning Loop: save accepted pair to memory with target language
     const item = editorData[i];
     try {
-      await fetch(`${API}/api/similarity/add`, {
+      await apiFetch(`${API}/api/similarity/add`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pairs: [{ source: item.sentence, translation: item.translated, target_lang: targetLangName || targetLang || '' }] })
       });
@@ -150,9 +211,17 @@ export default function TranslationEditor() {
       col_idx: d.col_idx
     }));
     
-    const res = await fetch(`${API}/api/pipeline/export`, {
+    const res = await apiFetch(`${API}/api/pipeline/export`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blocks: exportBlocks, original_file_base64: originalFileBase64, original_format: originalFormat, target_format: targetFormat })
+      body: JSON.stringify({ 
+        blocks: exportBlocks, 
+        original_file_base64: originalFileBase64, 
+        original_format: originalFormat, 
+        target_format: targetFormat,
+        filename: fileName,
+        source_lang: sourceLang,
+        target_lang: targetLangName || targetLang
+      })
     });
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -161,7 +230,7 @@ export default function TranslationEditor() {
     a.href = url; a.download = `Translated_${cleanFileName}.${targetFormat.toLowerCase()}`; a.click();
     URL.revokeObjectURL(url);
     setShowPreview(false);
-    navigate('/');
+    navigate('/app/dashboard');
   };
 
   const getMatchBadge = (type) => {
@@ -181,6 +250,10 @@ export default function TranslationEditor() {
     return true;
   });
 
+  const totalSentences = editorData.length;
+  const translatedCount = editorData.filter(d => !d.needs_translation).length;
+  const translationPercentage = totalSentences > 0 ? Math.round((translatedCount / totalSentences) * 100) : 0;
+
   return (
     <>
       <header className="fixed top-0 right-0 w-[calc(100%-240px)] z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex justify-between items-center h-16 px-8 border-b border-slate-100 dark:border-slate-800/50 shadow-sm ml-[240px]">
@@ -188,17 +261,24 @@ export default function TranslationEditor() {
           <h2 className="font-['Inter'] font-bold text-slate-900 dark:text-white leading-tight text-xl">{fileName || 'Translation Editor'}</h2>
           <span className="text-xs text-on-surface-variant/70 font-medium">EN → {targetLangName} · {tone} tone</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
           <StepIndicator />
           <div className="flex flex-col items-end gap-1">
-            <span className="text-[10px] font-bold text-primary tracking-wider uppercase">{approved} / {editorData.length} segments approved</span>
+            <span className="text-[10px] font-bold text-primary tracking-wider uppercase">
+              {translationPercentage < 100 ? `Translating: ${translationPercentage}%` : `${approved} / ${totalSentences} approved`}
+            </span>
             <div className="w-40 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all" style={{ width: editorData.length > 0 ? `${(approved / editorData.length) * 100}%` : '0%' }} />
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ease-out ${translationPercentage < 100 ? 'bg-secondary animate-pulse' : 'bg-primary'}`} 
+                style={{ width: `${translationPercentage < 100 ? translationPercentage : (totalSentences > 0 ? (approved / totalSentences) * 100 : 0)}%` }} 
+              />
             </div>
           </div>
-          <button onClick={() => setShowPreview(true)} className="bg-gradient-to-b from-primary to-primary-container text-white px-5 py-2 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 cursor-pointer">
-            <span className="material-symbols-outlined text-base">preview</span> Preview & Export
-          </button>
+          {translationPercentage === 100 && (
+            <button onClick={() => setShowPreview(true)} className="bg-gradient-to-b from-primary to-primary-container text-white px-5 py-2 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 cursor-pointer animate-fade-in">
+              <span className="material-symbols-outlined text-base">preview</span> Preview & Export
+            </button>
+          )}
         </div>
       </header>
 
@@ -230,11 +310,25 @@ export default function TranslationEditor() {
         </div>
 
         {/* Segments List */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-surface space-y-4 py-6 px-8 pb-24">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center h-64">
-              <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
-              <p className="font-semibold text-primary">Generating translations...</p>
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-surface space-y-4 py-6 px-8 pb-24 relative">
+          
+          {/* Subtle top loading indicator */}
+          {loading && (
+            <div className="absolute top-0 left-0 w-full h-1 bg-surface-container-high overflow-hidden z-10">
+              <div className="h-full bg-primary w-full animate-pulse" />
+            </div>
+          )}
+
+          {segments.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-12">
+              <span className="material-symbols-outlined text-6xl text-slate-300 mb-4" style={{ fontVariationSettings: "'FILL' 1" }}>error_outline</span>
+              <p className="font-bold text-slate-500 font-['Inter'] text-lg">No translatable text found!</p>
+              <p className="text-sm text-slate-400 mt-2 text-center max-w-sm">
+                We couldn't extract any valid sentences from the uploaded document. It might be empty, an image-only PDF, or a corrupted file.
+              </p>
+              <button onClick={() => navigate('/app/upload')} className="mt-6 px-6 py-2 bg-slate-800 text-white rounded-full font-semibold shadow hover:bg-slate-700 transition">
+                Upload Another File
+              </button>
             </div>
           ) : visibleData.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-on-surface-variant">
@@ -314,34 +408,48 @@ export default function TranslationEditor() {
 
       </main>
 
-      {/* ═══ SPLIT-SCREEN PREVIEW MODAL (outside main to cover sidebar) ═══ */}
-      {showPreview && (
-        <PreviewModal
-          editorData={editorData}
-          originalFileBase64={originalFileBase64}
-          originalFormat={originalFormat}
-          fileName={fileName}
-          sourceLang={sourceLang}
-          targetLangName={targetLangName}
-          onDownload={handleDownload}
-          onClose={() => setShowPreview(false)}
-        />
-      )}
+      {/* ═══ SPLIT-SCREEN PREVIEW MODAL (state preserved to cache backend rendering) ═══ */}
+      <PreviewModal
+        show={showPreview}
+        editorData={editorData}
+        originalFileBase64={originalFileBase64}
+        originalFormat={originalFormat}
+        fileName={fileName}
+        sourceLang={sourceLang}
+        targetLangName={targetLangName}
+        onDownload={handleDownload}
+        onClose={() => setShowPreview(false)}
+      />
     </>
   );
 }
 
-function PreviewModal({ editorData, originalFileBase64, originalFormat, fileName, sourceLang, targetLangName, onDownload, onClose }) {
+function PreviewModal({ show, editorData, originalFileBase64, originalFormat, fileName, sourceLang, targetLangName, onDownload, onClose }) {
   const [previewLoading, setPreviewLoading] = useState(true);
   const [error, setError] = useState('');
   const [originalPdfUrl, setOriginalPdfUrl] = useState('');
   const [translatedPdfUrl, setTranslatedPdfUrl] = useState('');
+  const lastPayloadRef = useRef('');
 
   const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
+    if (!show) return;
+
+    // Check if the actual text of translations has changed
+    const currentPayload = JSON.stringify(editorData.map(d => `${d.sentence}::${d.translated}::${d.status}`));
+    if (currentPayload === lastPayloadRef.current && originalPdfUrl && translatedPdfUrl) {
+      // CACHE HIT! We don't need to re-render the PDF from the backend again.
+      return;
+    }
+
+    // Cache MISS! We need to hit the backend
+    lastPayloadRef.current = currentPayload;
     renderDocuments();
-    // Cleanup blob URLs on unmount
+  }, [show, editorData]);
+
+  // Clean up blob URLs ONLY on complete component unmount (not hide)
+  useEffect(() => {
     return () => {
       if (originalPdfUrl) URL.revokeObjectURL(originalPdfUrl);
       if (translatedPdfUrl) URL.revokeObjectURL(translatedPdfUrl);
@@ -363,7 +471,7 @@ function PreviewModal({ editorData, originalFileBase64, originalFormat, fileName
         col_idx: d.col_idx
       }));
 
-      const res = await fetch(`${API}/api/pipeline/preview`, {
+      const res = await apiFetch(`${API}/api/pipeline/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blocks: exportBlocks, original_file_base64: originalFileBase64, original_format: originalFormat })
@@ -389,6 +497,8 @@ function PreviewModal({ editorData, originalFileBase64, originalFormat, fileName
     }
     setPreviewLoading(false);
   };
+
+  if (!show) return null;
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-md flex items-center justify-center" style={{ marginLeft: 0 }}>

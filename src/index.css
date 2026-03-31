@@ -66,6 +66,151 @@ body {
   vertical-align: middle;
 }
 
+/* ===== PREMIUM ANIMATIONS ===== */
+
+/* Page entrance */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-page-in {
+  animation: pageIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Fade in for streamed blocks */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out both;
+}
+
+/* Skeleton pulse */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #e2e5ea 25%, #f0f2f5 50%, #e2e5ea 75%);
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* Shimmer sweep on buttons */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Count-up number glow */
+@keyframes numberGlow {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-number {
+  animation: numberGlow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Sidebar nav item hover glow */
+.nav-glow {
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-glow:hover {
+  background: rgba(255,255,255,0.08);
+  box-shadow: 0 0 20px rgba(26, 86, 219, 0.15);
+}
+.nav-glow.active {
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.9), rgba(0, 63, 177, 0.8));
+  box-shadow: 0 4px 24px rgba(26, 86, 219, 0.3);
+}
+
+/* Dropzone drag-over glow */
+.dropzone-glow {
+  transition: all 0.3s ease;
+}
+.dropzone-glow.dragging {
+  border-color: #1a56db !important;
+  box-shadow: 0 0 30px rgba(26, 86, 219, 0.25), inset 0 0 20px rgba(26, 86, 219, 0.05);
+  background: rgba(26, 86, 219, 0.03) !important;
+}
+
+/* Card hover lift */
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 60px rgba(30, 58, 95, 0.1);
+}
+
+/* Gradient text animation */
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.gradient-text {
+  background: linear-gradient(135deg, #003fb1 0%, #1a56db 25%, #005622 50%, #1a56db 75%, #003fb1 100%);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 6s ease infinite;
+}
+
+/* Ripple effect */
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+.ripple::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.4s ease, height 0.4s ease, opacity 0.4s ease;
+  opacity: 0;
+}
+.ripple:active::before {
+  width: 300px; height: 300px;
+  opacity: 1;
+  transition: width 0s, height 0s, opacity 0s;
+}
+
+/* Progress bar animation */
+@keyframes progressFill {
+  from { width: 0; }
+}
+.animate-progress {
+  animation: progressFill 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Sidebar glassmorphism */
+.sidebar-glass {
+  background: linear-gradient(180deg, rgba(15, 30, 55, 0.97) 0%, rgba(10, 22, 42, 0.99) 100%);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ===== EXISTING STYLES ===== */
+
 .sidebar-gradient {
   background: linear-gradient(180deg, #1e3a5f 0%, #152b47 100%);
 }
