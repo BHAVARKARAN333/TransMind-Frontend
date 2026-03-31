@@ -256,26 +256,25 @@ export default function TranslationEditor() {
 
   return (
     <>
-      <header className="fixed top-0 right-0 w-[calc(100%-240px)] z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex justify-between items-center h-16 px-8 border-b border-slate-100 dark:border-slate-800/50 shadow-sm ml-[240px]">
+      <header className="fixed top-0 right-0 w-[calc(100%-240px)] z-40 bg-white dark:bg-slate-900 flex justify-between items-center h-16 px-8 border-b border-slate-200 dark:border-slate-800 shadow-sm ml-[240px]">
         <div className="flex flex-col">
-          <h2 className="font-['Inter'] font-bold text-slate-900 dark:text-white leading-tight text-xl">{fileName || 'Translation Editor'}</h2>
-          <span className="text-xs text-on-surface-variant/70 font-medium">EN → {targetLangName} · {tone} tone</span>
+          <h2 className="font-bold text-slate-900 dark:text-white leading-tight text-xl">{fileName || 'Translation Editor'}</h2>
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">EN → {targetLangName} · {tone} tone</span>
         </div>
-        <div className="flex items-center gap-6">
-          <StepIndicator />
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-[10px] font-bold text-primary tracking-wider uppercase">
-              {translationPercentage < 100 ? `Translating: ${translationPercentage}%` : `${approved} / ${totalSentences} approved`}
+        <div className="flex items-center gap-8">
+          <div className="flex flex-col items-end gap-1.5 min-w-[150px]">
+            <span className={`text-[11px] font-bold tracking-wider uppercase ${translationPercentage < 100 ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`}>
+              {translationPercentage < 100 ? `Translating: ${translationPercentage}%` : `Translation Complete`}
             </span>
-            <div className="w-40 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+            <div className="w-48 h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
               <div 
-                className={`h-full rounded-full transition-all duration-500 ease-out ${translationPercentage < 100 ? 'bg-secondary animate-pulse' : 'bg-primary'}`} 
-                style={{ width: `${translationPercentage < 100 ? translationPercentage : (totalSentences > 0 ? (approved / totalSentences) * 100 : 0)}%` }} 
+                className={`h-full rounded-full transition-all duration-500 ease-out ${translationPercentage < 100 ? 'bg-blue-600 animate-pulse' : 'bg-green-600'}`} 
+                style={{ width: `${translationPercentage}%` }} 
               />
             </div>
           </div>
           {translationPercentage === 100 && (
-            <button onClick={() => setShowPreview(true)} className="bg-gradient-to-b from-primary to-primary-container text-white px-5 py-2 rounded-full text-sm font-semibold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 cursor-pointer animate-fade-in">
+            <button onClick={() => setShowPreview(true)} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-2 rounded-lg text-sm font-semibold shadow hover:shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer">
               <span className="material-symbols-outlined text-base">preview</span> Preview & Export
             </button>
           )}
@@ -397,12 +396,29 @@ export default function TranslationEditor() {
         </div>
 
         {/* Footer */}
-        <footer className="fixed bottom-0 left-[240px] right-0 bg-surface-container-lowest border-t border-outline-variant/10 px-8 py-3 flex items-center justify-between z-40">
-          <div className="text-[11px] font-medium text-on-surface-variant">
-            Showing <span className="font-bold text-on-surface">{visibleData.length}</span> of <span className="font-bold text-on-surface">{editorData.length}</span> segments
+        <footer className="fixed bottom-0 left-[240px] right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-8 py-4 flex items-center justify-between z-40 shadow-[0_-4px_10px_-4px_rgba(0,0,0,0.1)]">
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            Showing <span className="font-bold text-slate-900 dark:text-white">{visibleData.length}</span> of <span className="font-bold text-slate-900 dark:text-white">{editorData.length}</span> segments
           </div>
-          <button onClick={() => setShowPreview(true)} className="px-6 py-2 bg-gradient-to-r from-primary to-tertiary text-white font-bold text-sm rounded-full shadow-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all cursor-pointer">
-            <span className="material-symbols-outlined text-base">preview</span> Preview & Export Document
+          <button 
+            onClick={() => setShowPreview(true)} 
+            disabled={translationPercentage < 100}
+            className={`px-6 py-2.5 font-bold text-sm rounded-lg flex items-center gap-2 transition-all 
+              ${translationPercentage === 100 
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md hover:bg-slate-800 dark:hover:bg-slate-100 cursor-pointer active:scale-95' 
+                : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-70 border border-slate-300 dark:border-slate-700'}`
+            }
+          >
+            {translationPercentage < 100 ? (
+              <>
+                <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
+                Translating...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-base">preview</span> Preview & Export Document
+              </>
+            )}
           </button>
         </footer>
 
